@@ -43,3 +43,9 @@ Buton durumu:
 0 ise textBox5 = "Basılı Değil" olarak güncellenir.
 
 Uygulama kapanırken eğer seri port açıksa güvenli bir şekilde kapatılır.
+# Tiva C - LCD & ADC Projesi
+
+## Devre Şeması
+
+![Devre Görseli](Serial_gorsel)
+
