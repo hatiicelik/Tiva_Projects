@@ -1,0 +1,228 @@
+using System;
+using System.IO.Ports;
+using System.Windows.Forms;
+
+namespace ilerimikro_odev2
+{
+    public partial class MainForm : Form
+    {
+        private string rxBuffer = "";
+
+        public MainForm()
+        {
+            InitializeComponent();
+            button4.Enabled = true;   // Metin Gönder her zaman aktif
+
+
+            // -------- SerialPort ayarları --------
+            serialPort1.BaudRate = 9600;
+            serialPort1.Parity = Parity.None;
+            serialPort1.DataBits = 8;
+            serialPort1.StopBits = StopBits.One;
+            serialPort1.NewLine = "\n";
+
+            // -------- COM portları listele --------
+            comboBox1.Items.Clear();
+            comboBox1.Items.AddRange(SerialPort.GetPortNames());
+            if (comboBox1.Items.Count > 0)
+                comboBox1.SelectedIndex = 2;
+
+            // -------- Eventleri KODLA bağla (çift tıklama yok) --------
+            button1.Click += Button1Click; // Port Aç
+            button2.Click += Button2Click; // Port Kapa
+            button3.Click += Button3Click; // Saat Gönder
+            button4.Click += Button4Click; // Metin Gönder
+
+            serialPort1.DataReceived += serialPort1_DataReceived;
+
+            // -------- Başlangıç durumları --------
+            button2.Enabled = false; // Port Kapa pasif
+        }
+
+        // ---------------- PORT AÇ ----------------
+        private void Button1Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (comboBox1.SelectedItem == null)
+                {
+                    MessageBox.Show("Lütfen bir COM port seçin.");
+                    return;
+                }
+
+                if (serialPort1.IsOpen)
+                    serialPort1.Close();
+
+                serialPort1.PortName = comboBox1.SelectedItem.ToString();
+                serialPort1.Open();
+
+                button1.Enabled = false;  // Port Aç pasif
+                button2.Enabled = true;   // Port Kapa aktif
+
+                MessageBox.Show("Bağlandı: " + serialPort1.PortName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Port açma hatası: " + ex.Message);
+            }
+        }
+
+        // ---------------- PORT KAPA ----------------
+        private void Button2Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (serialPort1.IsOpen)
+                    serialPort1.Close();
+
+                button1.Enabled = true;
+                button2.Enabled = false;
+
+                MessageBox.Show("Port kapandı.");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Port kapama hatası: " + ex.Message);
+            }
+        }
+
+        // ---------------- SAAT GÖNDER ----------------
+        private void Button3Click(object sender, EventArgs e)
+        {
+            if (!serialPort1.IsOpen)
+            {
+                MessageBox.Show("Önce Port Aç.");
+                return;
+            }
+
+            string t = textBox1.Text.Trim(); // 12:34:56
+
+            if (!IsValidTime(t))
+            {
+                MessageBox.Show("Saat formatı hatalı. Örn: 12:34:56");
+                return;
+            }
+
+            // Protokol: ?HH:MM:SS\n
+            string packet = "?" + t + "\n";
+
+            try
+            {
+                serialPort1.Write(packet);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Saat gönderme hatası: " + ex.Message);
+            }
+        }
+
+        // ---------------- METİN GÖNDER ----------------
+        private void Button4Click(object sender, EventArgs e)
+        {
+            if (!serialPort1.IsOpen)
+            {
+                MessageBox.Show("Önce Port Aç.");
+                return;
+            }
+
+            string s = textBox2.Text;
+            if (s == null) s = "";
+
+            // 3 karaktere zorla
+            s = s.Replace("\r", "").Replace("\n", "");
+            if (s.Length < 3) s = s.PadRight(3, ' ');
+            if (s.Length > 3) s = s.Substring(0, 3);
+
+            // Protokol: *ABC\n
+            string packet = "*" + s + "\n";
+
+            try
+            {
+                serialPort1.Write(packet);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Metin gönderme hatası: " + ex.Message);
+            }
+        }
+
+        // ---------------- RX (Tiva -> PC) ----------------
+        private void serialPort1_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                string data = serialPort1.ReadExisting();
+                rxBuffer += data;
+
+                int idx;
+                while ((idx = rxBuffer.IndexOf('\n')) >= 0)
+                {
+                    string line = rxBuffer.Substring(0, idx).Trim('\r');
+                    rxBuffer = rxBuffer.Substring(idx + 1);
+
+                    BeginInvoke(new Action<string>(HandleLine), line);
+                }
+            }
+            catch
+            {
+                // sessiz geç
+            }
+        }
+
+        private void HandleLine(string line)
+        {
+            // Beklenen: R12:34:56,4095,1
+            if (string.IsNullOrEmpty(line)) return;
+            if (!line.StartsWith("R")) return;
+
+            string payload = line.Substring(1);
+            string[] parts = payload.Split(',');
+
+            if (parts.Length < 3) return;
+
+            string timeStr = parts[0].Trim();
+            string adcStr = parts[1].Trim();
+            string btnStr = parts[2].Trim();
+
+            textBox3.Text = timeStr; // Gelen Saat
+            textBox4.Text = adcStr;  // Gelen ADC
+
+            if (btnStr == "1")
+                textBox5.Text = "Butona Basıldı";
+            else
+                textBox5.Text = "Basılı Değil";
+        }
+
+        // ---------------- Yardımcı ----------------
+        private bool IsValidTime(string t)
+        {
+            if (t == null) return false;
+            if (t.Length != 8) return false;
+            if (t[2] != ':' || t[5] != ':') return false;
+
+            int hh, mm, ss;
+            if (!int.TryParse(t.Substring(0, 2), out hh)) return false;
+            if (!int.TryParse(t.Substring(3, 2), out mm)) return false;
+            if (!int.TryParse(t.Substring(6, 2), out ss)) return false;
+
+            if (hh < 0 || hh > 23) return false;
+            if (mm < 0 || mm > 59) return false;
+            if (ss < 0 || ss > 59) return false;
+
+            return true;
+        }
+
+        // Form kapanırken portu garanti kapat
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            try
+            {
+                if (serialPort1.IsOpen)
+                    serialPort1.Close();
+            }
+            catch { }
+
+            base.OnFormClosing(e);
+        }
+    }
+}
