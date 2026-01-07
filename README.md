@@ -1,2 +1,2 @@
 # Tiva_Projects
-TM4C123GH6PM Projects
+Hatice ÇELİK B210100026
